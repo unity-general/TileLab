@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,8 +6,7 @@ using UnityEngine.Tilemaps;
 
 public class TileMapManager : MonoBehaviour
 {
-  [SerializeField] Tilemap upTilemap;
-  [SerializeField] Tilemap downTilemap;
+  [SerializeField] Tilemap tilemap;
   [SerializeField] Tilemap collidersTilemap;
   [SerializeField] Tile[] groundTiles;
   [SerializeField] int rowNum;
@@ -24,24 +24,25 @@ public class TileMapManager : MonoBehaviour
   {
     _playersSpawning = GetComponent<PlayersSpawning>();
 
-    _cellSizeX = upTilemap.transform.localScale.x;
-    _cellSizeY = upTilemap.transform.localScale.y;
+    _cellSizeX = tilemap.transform.localScale.x;
+    _cellSizeY = tilemap.transform.localScale.y;
 
+    // TODO: Move camera position instead
     _tileMapMovePoint = new GameObject("Tile_Map_Move_Point");
     _tileMapMovePoint.transform.parent = transform;
 
     if (colNum % 2 != 0)
     {
       Vector3 mapOffset = new Vector3(_cellSizeX / 2, 0, 0);
-      upTilemap.transform.Translate(mapOffset);
-      downTilemap.transform.Translate(mapOffset);
+      tilemap.transform.Translate(mapOffset);
       collidersTilemap.transform.Translate(mapOffset);
       _tileMapMovePoint.transform.Translate(mapOffset);
       _cellOffsetX = _cellSizeX / 2;
     }
 
-    GenerateTileMaps(groundTiles, _cellSizeX, _cellSizeY, _cellOffsetX);
-    GenerateBoundingWalls(groundTiles, _cellSizeX, _cellSizeY);
+    GenerateTileMaps(groundTiles);
+    GenerateBoundingWalls(groundTiles);
+    SpawnPlayers(_cellSizeX, _cellSizeY, _cellOffsetX);
   }
 
   void Start()
@@ -52,9 +53,8 @@ public class TileMapManager : MonoBehaviour
   {
     // Reconciliation to the tile map move point
     // upTilemap, downTilemap and collidersTilemap has the same coordinates
-    Vector3 tileMapMoveTarget = Vector3.MoveTowards(upTilemap.transform.position, _tileMapMovePoint.transform.position, _movementSpeed * Time.deltaTime);
-    upTilemap.transform.position = tileMapMoveTarget;
-    downTilemap.transform.position = tileMapMoveTarget;
+    Vector3 tileMapMoveTarget = Vector3.MoveTowards(tilemap.transform.position, _tileMapMovePoint.transform.position, _movementSpeed * Time.deltaTime);
+    tilemap.transform.position = tileMapMoveTarget;
     collidersTilemap.transform.position = tileMapMoveTarget;
   }
 
@@ -64,31 +64,63 @@ public class TileMapManager : MonoBehaviour
     _movementSpeed = speed;
   }
 
-  private void GenerateTileMaps(Tile[] tiles, float cellSizeX, float cellSizeY, float cellOffsetX)
+  private void GenerateTileMaps(Tile[] tiles)
   {
     if (tiles.Length == 0)
     {
       return;
     }
 
-    float xPos;
-    float yPos;
-    float halfColNum = colNum / 2;
-    Vector3 tilePosTemp;
-    Vector3 yNegativeOffsetMask = new Vector3(0, cellSizeY, 1);
-    Vector3 xMirrorMask = new Vector3(1, -1, 1);
-    for (int i = 0; i < rowNum; i++)
+    int halfColNum = (int)Mathf.Ceil(colNum / 2f);
+    BoundsInt upTilemapGrounds = new BoundsInt(new Vector3Int(-halfColNum, middleSpace, 1), new Vector3Int(colNum, rowNum, 1));
+    BoundsInt downTilemapGrounds = new BoundsInt(new Vector3Int(-halfColNum, -(rowNum + middleSpace), 1), new Vector3Int(colNum, rowNum, 1));
+    Tile[] groundTiles = Fill(rowNum * colNum, tiles[0]);
+    tilemap.SetTilesBlock(upTilemapGrounds, groundTiles);
+    tilemap.SetTilesBlock(downTilemapGrounds, groundTiles);
+  }
+
+  private void GenerateBoundingWalls(Tile[] tiles)
+  {
+    if (tiles.Length == 0)
     {
-      for (int j = 0; j < colNum; j++)
-      {
-        xPos = (j - halfColNum) * cellSizeX;
-        yPos = (i + middleSpace) * cellSizeY;
-        tilePosTemp = new Vector3(xPos, yPos);
-        upTilemap.SetTile(upTilemap.WorldToCell(tilePosTemp), tiles[0]);
-        downTilemap.SetTile(upTilemap.WorldToCell(Vector3.Scale(tilePosTemp, xMirrorMask) - yNegativeOffsetMask), tiles[0]);
-      }
+      return;
     }
 
+    int wallNum = (rowNum + colNum) * 4 + 8;
+    int halfWallNum = wallNum / 2;
+    int halfColNum = (int)Mathf.Ceil(colNum / 2f);
+    int oppositeOffset = rowNum + colNum + 2;
+
+    Vector3Int[] positionArr = new Vector3Int[wallNum];
+    int it = 0;
+    for (int i = 0; i < colNum + 2; i++)
+    {
+      int xPos = i - halfColNum - 1;
+      positionArr[it] = new Vector3Int(xPos, middleSpace - 1, 1);
+      positionArr[it + oppositeOffset] = new Vector3Int(xPos, middleSpace + rowNum, 1);
+      positionArr[it + halfWallNum] = new Vector3Int(xPos, -middleSpace, 1);
+      positionArr[it + oppositeOffset + halfWallNum] = new Vector3Int(xPos, -middleSpace - 1 - rowNum, 1);
+      it++;
+    }
+
+    int xRightPos = halfColNum - 1;
+    int xLeftPos = -halfColNum - 1;
+    for (int i = 0; i < rowNum; i++)
+    {
+      int yPos = i + middleSpace;
+      positionArr[it] = new Vector3Int(xRightPos, yPos, 1);
+      positionArr[it + oppositeOffset] = new Vector3Int(xLeftPos, yPos, 1);
+      positionArr[it + halfWallNum] = new Vector3Int(xRightPos, -yPos - 1, 1);
+      positionArr[it + oppositeOffset + halfWallNum] = new Vector3Int(xLeftPos, -yPos - 1, 1);
+      it++;
+    }
+
+    Tile[] wallTiles = Fill(wallNum, tiles[1]);
+    collidersTilemap.SetTiles(positionArr, wallTiles);
+  }
+
+  private void SpawnPlayers(float cellSizeX, float cellSizeY, float cellOffsetX)
+  {
     float playerX = 0f;
     if (colNum > 1)
     {
@@ -98,50 +130,13 @@ public class TileMapManager : MonoBehaviour
     _playersSpawning.SpawnPlayer(playerX, playerY);
   }
 
-  private void GenerateBoundingWalls(Tile[] tiles, float cellSizeX, float cellSizeY)
+  private static T[] Fill<T>(int size, T value)
   {
-    if (tiles.Length == 0)
+    T[] arr = new T[size];
+    for (int i = 0; i < size; i++)
     {
-      return;
+      arr[i] = value;
     }
-
-    float xPos;
-    float yPos;
-    float halfColNum = colNum / 2 + 1;
-    Vector3 tilePosTemp;
-
-    // Set wall tiles horizontally
-    Vector3 yUpperOffset = new Vector3(0, (rowNum + 1) * cellSizeY, 0);
-    yPos = (middleSpace - 1) * cellSizeY;
-    for (int i = 0; i < colNum + 2; i++)
-    {
-      xPos = (i - halfColNum) * cellSizeX;
-      tilePosTemp = new Vector3(xPos, yPos);
-      Vector3 lowerPos = tilePosTemp;
-      Vector3 upperPos = tilePosTemp + yUpperOffset;
-      GenerateBoundingWallSides(tiles, lowerPos, upperPos, cellSizeY);
-    }
-
-    // Set wall tiles vertically
-    Vector3 xRightOffset = new Vector3((colNum + 1) * cellSizeX, 0, 0);
-    xPos = -halfColNum * cellSizeX;
-    for (int i = 0; i < rowNum; i++)
-    {
-      yPos = (i + middleSpace) * cellSizeY;
-      tilePosTemp = new Vector3(xPos, yPos);
-      Vector3 leftPos = tilePosTemp;
-      Vector3 rightPos = tilePosTemp + xRightOffset;
-      GenerateBoundingWallSides(tiles, leftPos, rightPos, cellSizeY);
-    }
-  }
-
-  private void GenerateBoundingWallSides(Tile[] tiles, Vector3 sidePos, Vector3 oppositeSidePos, float cellSizeY)
-  {
-    Vector3 xMirrorMask = new Vector3(1, -1, 1);
-    Vector3 yNegativeOffsetMask = new Vector3(0, cellSizeY, 1);
-    collidersTilemap.SetTile(collidersTilemap.WorldToCell(sidePos), tiles[1]);
-    collidersTilemap.SetTile(collidersTilemap.WorldToCell(oppositeSidePos), tiles[1]);
-    collidersTilemap.SetTile(collidersTilemap.WorldToCell(Vector3.Scale(sidePos, xMirrorMask) - yNegativeOffsetMask), tiles[1]);
-    collidersTilemap.SetTile(collidersTilemap.WorldToCell(Vector3.Scale(oppositeSidePos, xMirrorMask) - yNegativeOffsetMask), tiles[1]);
+    return arr;
   }
 }
