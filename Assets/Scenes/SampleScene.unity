@@ -287,7 +287,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 74812ff6af6f9e34caa854f463a7fad6, type: 2}
   - {fileID: 11400000, guid: e4d075b514d674f48abcdb3a5db0142f, type: 2}
   rowNum: 5
-  colNum: 15
+  colNum: 3
   middleSpace: 1
 --- !u!4 &988803518
 Transform:
